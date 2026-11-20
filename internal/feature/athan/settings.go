@@ -30,10 +30,14 @@ type Settings struct {
 	Volume  int `json:"volume"`
 	Warning int `json:"warning"`
 
+	// Surah is the dropdown's choice, 1 to 114, and QuranVolume how loud it recites.
+	Surah       int `json:"surah"`
+	QuranVolume int `json:"quran_volume"`
+
 	Off []Prayer `json:"off,omitempty"`
 }
 
-const settingsVersion = 3
+const settingsVersion = 4
 
 func Defaults() Settings {
 	return Settings{
@@ -46,6 +50,9 @@ func Defaults() Settings {
 		FajrVoice: fajrs[0].Name,
 		Volume:    70,
 		Warning:   15,
+
+		Surah:       1,
+		QuranVolume: 60,
 	}
 }
 
@@ -62,6 +69,10 @@ func (s Settings) usable() Settings {
 		// Version 2 offered IslamCan's recordings, none with Fajr's words, so Fajr shared the others'.
 		s.Voice, s.FajrVoice, s.Version = athans[0].Name, fajrs[0].Name, 3
 	}
+	if s.Version == 3 {
+		// Version 3 could not recite.
+		s.Surah, s.QuranVolume, s.Version = 1, 60, 4
+	}
 	d := Defaults()
 	if _, ok := methodNamed(s.Method); !ok {
 		s.Method = d.Method
@@ -77,6 +88,10 @@ func (s Settings) usable() Settings {
 	}
 	s.Volume = min(max(s.Volume, 0), 100)
 	s.Warning = min(max(s.Warning, 0), MaxWarning)
+	if s.Surah < 1 || s.Surah > len(surahs) {
+		s.Surah = 1
+	}
+	s.QuranVolume = min(max(s.QuranVolume, 0), 100)
 	return s
 }
 

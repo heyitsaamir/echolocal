@@ -56,6 +56,7 @@ type Athan struct {
 	fired    map[string]bool
 	skipped  string
 	playing  *sound.Claim
+	reciting *sound.Claim
 	calling  Prayer
 
 	warn *led.Claim
@@ -84,6 +85,12 @@ type Athan struct {
 	times  map[Prayer]*esphome.TextSensor
 
 	play, stop, skip *esphome.Button
+
+	surah       *esphome.Select
+	quranVolume *esphome.Number
+	recitingNow *esphome.TextSensor
+	recite      *esphome.Button
+	stopRecite  *esphome.Button
 }
 
 var get = sync.OnceValue(build)
@@ -171,6 +178,20 @@ func (a *Athan) entities() {
 	a.play = &esphome.Button{Base: shown("play", "Play athan now", "mdi:play"), OnPress: a.Test}
 	a.stop = &esphome.Button{Base: shown("stop", "Stop athan", "mdi:stop"), OnPress: a.Stop}
 	a.skip = &esphome.Button{Base: shown("skip", "Skip next athan", "mdi:skip-next"), OnPress: a.Skip}
+
+	a.surah = &esphome.Select{Base: esphome.Base{ObjectID: "quran_surah", Name: "Surah", Icon: "mdi:book-open-variant"},
+		Options: SurahNames(), OnCommand: func(v string) {
+			if n, ok := surahNumber(v); ok {
+				a.change(func(s *Settings) { s.Surah = n })
+			}
+		}}
+	a.quranVolume = &esphome.Number{Base: esphome.Base{ObjectID: "quran_volume", Name: "Quran volume",
+		Icon: "mdi:volume-high", Category: esphome.CategoryConfig},
+		Min: 0, Max: 100, Step: 5, Unit: "%", Mode: api.NumberMode_NUMBER_MODE_SLIDER,
+		OnCommand: func(v float32) { a.change(func(s *Settings) { s.QuranVolume = int(math.Round(float64(v))) }) }}
+	a.recitingNow = &esphome.TextSensor{Base: esphome.Base{ObjectID: "quran_reciting", Name: "Reciting", Icon: "mdi:account-voice"}}
+	a.recite = &esphome.Button{Base: esphome.Base{ObjectID: "quran_play", Name: "Play surah", Icon: "mdi:play"}, OnPress: a.Recite}
+	a.stopRecite = &esphome.Button{Base: esphome.Base{ObjectID: "quran_stop", Name: "Stop surah", Icon: "mdi:stop"}, OnPress: a.StopSurah}
 }
 
 func (a *Athan) Entities() []esphome.Entity {
@@ -184,7 +205,7 @@ func (a *Athan) Entities() []esphome.Entity {
 	for _, p := range Prayers {
 		out = append(out, a.times[p])
 	}
-	return append(out, a.play, a.stop, a.skip)
+	return append(out, a.play, a.stop, a.skip, a.surah, a.quranVolume, a.recitingNow, a.recite, a.stopRecite)
 }
 
 func (a *Athan) publish(s Settings) {
@@ -199,6 +220,8 @@ func (a *Athan) publish(s Settings) {
 	a.custom.Set(s.CustomURL)
 	a.volume.Set(float32(s.Volume))
 	a.warning.Set(float32(s.Warning))
+	a.surah.Set(surahName(s.Surah))
+	a.quranVolume.Set(float32(s.QuranVolume))
 	for p, sw := range a.per {
 		sw.Set(s.Calls(p))
 	}
@@ -279,6 +302,7 @@ func (a *Athan) Run(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			a.Stop()
+			a.StopSurah()
 			return nil
 		case <-t.C:
 		}
@@ -486,7 +510,7 @@ func (a *Athan) start(s Settings, p Prayer) {
 	safe.Go("athan end", func() {
 		<-claim.Done()
 		a.call.Clear()
-		snd.Backgrounds().Duck(false)
+		a.settleDuck()
 		slog.Info("athan ended", "prayer", p, "stopped", claim.Stopped())
 	})
 }
@@ -560,6 +584,9 @@ func (a *Athan) take(e buttons.Event) bool {
 	case e.Kind == buttons.Tap && a.Playing():
 		a.Stop()
 		return true
+	case e.Kind == buttons.Tap && a.Reciting():
+		a.StopSurah()
+		return true
 	case e.Kind == buttons.DoubleTap && a.approaching():
 		a.Skip()
 		return true
@@ -590,4 +617,60 @@ func unique(v ...string) []string {
 		}
 	}
 	return out
+}
+
+// Recite plays the chosen surah, unless an athan is playing; an athan that comes cuts it off.
+func (a *Athan) Recite() {
+	s := a.Settings()
+	n, url, level := s.Surah, SurahURL(s.Surah), float64(s.QuranVolume)/100
+
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.playing != nil && !a.playing.Finished() {
+		slog.Info("not reciting over the athan", "surah", n)
+		return
+	}
+	slog.Info("reciting", "surah", n, "reciter", Reciter, "url", url, "level", level)
+
+	snd := speaker.Sound()
+	snd.Backgrounds().Duck(true)
+	claim := snd.Claim("quran", func(ctx context.Context, spk *speaker.Player) error {
+		return Recitation(ctx, spk, url, level)
+	})
+	a.reciting = claim
+	a.recitingNow.Set(surahName(n))
+
+	safe.Go("recitation end", func() {
+		<-claim.Done()
+		if err := claim.Err(); err != nil && !claim.Stopped() {
+			slog.Error("the recitation stopped", "surah", n, "err", err)
+		}
+		a.mu.Lock()
+		if a.reciting == claim {
+			a.recitingNow.Set("")
+		}
+		a.mu.Unlock()
+		a.settleDuck()
+		slog.Info("recitation ended", "surah", n, "stopped", claim.Stopped())
+	})
+}
+
+// StopSurah silences a recitation that is playing.
+func (a *Athan) StopSurah() {
+	if a.Reciting() {
+		speaker.Sound().Silence()
+	}
+}
+
+func (a *Athan) Reciting() bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.reciting != nil && !a.reciting.Finished()
+}
+
+// settleDuck lets music back up once neither the athan nor a surah is sounding; ducking does not nest.
+func (a *Athan) settleDuck() {
+	if !a.Playing() && !a.Reciting() {
+		speaker.Sound().Backgrounds().Duck(false)
+	}
 }

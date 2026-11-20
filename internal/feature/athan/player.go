@@ -140,7 +140,11 @@ func Stream(ctx context.Context, p *speaker.Player, url string, level float64) e
 		return err
 	}
 	defer body.Close()
+	return decode(ctx, p, body, level)
+}
 
+// decode plays an MP3 onto the alerts lane until it ends, a read fails, or ctx stops it.
+func decode(ctx context.Context, p *speaker.Player, body io.Reader, level float64) error {
 	dec, err := gomp3.NewDecoder(body)
 	if err != nil {
 		return fmt.Errorf("mp3: %w", err)
