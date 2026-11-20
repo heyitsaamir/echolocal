@@ -395,7 +395,9 @@ func (a *Athan) keepRecordings(s Settings, now time.Time) {
 		defer a.fetching.Store(false)
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
-		for _, url := range unique(s.URL(Fajr), s.URL(Dhuhr)) {
+		keep := s.Recordings()
+		Prune(keep)
+		for _, url := range keep {
 			if err := Keep(ctx, url); err != nil {
 				slog.Warn("could not keep an athan recording", "url", url, "err", err)
 				a.mu.Lock()

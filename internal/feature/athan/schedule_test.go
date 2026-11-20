@@ -1,6 +1,7 @@
 package athan
 
 import (
+	"slices"
 	"testing"
 	"time"
 )
@@ -112,19 +113,47 @@ func TestNearnessFillsAcrossTheWarning(t *testing.T) {
 	}
 }
 
-func TestFajrCanHaveItsOwnVoice(t *testing.T) {
+func TestFajrHasItsOwnAthanByDefault(t *testing.T) {
 	s := Defaults()
-	s.Voice = "IslamCan 3"
-	if s.URL(Fajr) != s.URL(Dhuhr) {
-		t.Fatal("Fajr should follow the other prayers by default")
-	}
-	s.FajrVoice = "IslamCan 7"
 	if s.URL(Fajr) == s.URL(Dhuhr) {
-		t.Fatal("Fajr kept the shared voice")
+		t.Fatal("Fajr shares the other prayers' athan, which lacks Fajr's words")
+	}
+	s.FajrVoice = SameVoice
+	if s.URL(Fajr) != s.URL(Dhuhr) {
+		t.Fatal("Same as other prayers did not follow them")
 	}
 	s.Voice, s.CustomURL = CustomVoice, " http://10.0.0.113:8123/local/athan.mp3 "
 	if got := s.URL(Dhuhr); got != "http://10.0.0.113:8123/local/athan.mp3" {
 		t.Fatalf("custom url = %q", got)
+	}
+}
+
+func TestFajrAthansAreOfferedForFajrAlone(t *testing.T) {
+	for _, v := range fajrs {
+		if slices.Contains(VoiceNames(false), v.Name) {
+			t.Errorf("%q is offered for the other prayers", v.Name)
+		}
+		if !slices.Contains(VoiceNames(true), v.Name) {
+			t.Errorf("%q is not offered for Fajr", v.Name)
+		}
+	}
+}
+
+func TestEveryRecordingIsKeptOnceWithTheChosenFirst(t *testing.T) {
+	s := Defaults()
+	s.Voice = athans[3].Name
+	got := s.Recordings()
+	if len(got) != len(athans)+len(fajrs) || got[0] != s.URL(Fajr) || got[1] != athans[3].URL {
+		t.Fatalf("got %d recordings starting %v", len(got), got[:2])
+	}
+}
+
+func TestIslamCanChoicesMoveToTheNewDefaults(t *testing.T) {
+	old := Defaults()
+	old.Version, old.Voice, old.FajrVoice = 2, "IslamCan 1", SameVoice
+	got := old.usable()
+	if got.Voice != athans[0].Name || got.FajrVoice != fajrs[0].Name || got.Version != settingsVersion {
+		t.Fatalf("not moved: %+v", got)
 	}
 }
 
@@ -135,7 +164,7 @@ func TestOldOrDamagedSettingsBecomeUsable(t *testing.T) {
 	s := Defaults()
 	s.Method, s.Voice, s.Volume, s.Warning = "gone", "gone", 400, -3
 	got := s.usable()
-	if got.Method != Methods[0].Name || got.Voice != voices[0].Name || got.Volume != 100 || got.Warning != 0 {
+	if got.Method != Methods[0].Name || got.Voice != athans[0].Name || got.Volume != 100 || got.Warning != 0 {
 		t.Fatalf("not repaired: %+v", got)
 	}
 }

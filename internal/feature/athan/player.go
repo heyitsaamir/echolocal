@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -70,6 +71,26 @@ func Keep(ctx context.Context, url string) error {
 		return fmt.Errorf("%s: %w", url, err)
 	}
 	return os.Rename(tmp.Name(), path)
+}
+
+// Prune deletes cached recordings no longer offered, such as a voice list a newer build replaced.
+func Prune(keep []string) {
+	wanted := map[string]bool{}
+	for _, url := range keep {
+		wanted[filepath.Base(cached(url))] = true
+	}
+	entries, err := os.ReadDir(CacheDir)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		if e.IsDir() || wanted[e.Name()] {
+			continue
+		}
+		if err := os.Remove(filepath.Join(CacheDir, e.Name())); err == nil {
+			slog.Info("athan recording dropped", "file", e.Name())
+		}
+	}
 }
 
 // check refuses a download that is not MP3, such as an error page, before it replaces anything.

@@ -33,7 +33,7 @@ type Settings struct {
 	Off []Prayer `json:"off,omitempty"`
 }
 
-const settingsVersion = 2
+const settingsVersion = 3
 
 func Defaults() Settings {
 	return Settings{
@@ -42,8 +42,8 @@ func Defaults() Settings {
 		FromHA:    true,
 		Method:    Methods[0].Name,
 		School:    Shafi,
-		Voice:     voices[0].Name,
-		FajrVoice: SameVoice,
+		Voice:     athans[0].Name,
+		FajrVoice: fajrs[0].Name,
 		Volume:    70,
 		Warning:   15,
 	}
@@ -57,6 +57,10 @@ func (s Settings) usable() Settings {
 	if s.Version == 1 {
 		// Version 1 had no way to follow Home Assistant; its place was copied from there by hand.
 		s.FromHA, s.Version = true, 2
+	}
+	if s.Version == 2 {
+		// Version 2 offered IslamCan's recordings, none with Fajr's words, so Fajr shared the others'.
+		s.Voice, s.FajrVoice, s.Version = athans[0].Name, fajrs[0].Name, 3
 	}
 	d := Defaults()
 	if _, ok := methodNamed(s.Method); !ok {
@@ -162,12 +166,12 @@ func (s Settings) URL(p Prayer) string {
 	if name == CustomVoice {
 		return strings.TrimSpace(s.CustomURL)
 	}
-	for _, v := range voices {
+	for _, v := range slices.Concat(fajrs, athans) {
 		if v.Name == name {
 			return v.URL
 		}
 	}
-	return voices[0].URL
+	return athans[0].URL
 }
 
 type voice struct{ Name, URL string }
@@ -177,25 +181,49 @@ const (
 	CustomVoice = "Custom URL"
 )
 
-// voices are IslamCan's public recordings; the files carry no reciter names, so they are numbered.
-var voices = func() []voice {
-	out := make([]voice, 20)
-	for i := range out {
-		out[i] = voice{
-			Name: fmt.Sprintf("IslamCan %d", i+1),
-			URL:  fmt.Sprintf("https://www.islamcan.com/audio/adhan/azan%d.mp3", i+1),
-		}
-	}
-	return out
-}()
+const tvquran = "https://download.tvquran.com/download/"
 
+// athans are tvquran.com's Adhan and Takbir collection (www.tvquran.com/en/selections/category/9),
+// less its Eid takbir.
+var athans = []voice{
+	{"Nasser Al-Qatami", tvquran + "TvQuran.com__Athan/TvQuran.com__08.athan.mp3"},
+	{"Mishary Alafasi", tvquran + "TvQuran.com__Athan/TvQuran.com__04.athan.mp3"},
+	{"Mishary Alafasi, with dua", tvquran + "selections/180/58b0d9f97eeec.mp3"},
+	{"Hamad Daghriry", tvquran + "TvQuran.com__Athan/TvQuran.com__06.athan.mp3"},
+	{"Majid Al-Hamthany", tvquran + "TvQuran.com__Athan/TvQuran.com__05.athan.mp3"},
+	{"Ghazi Asaadoun", tvquran + "TvQuran.com__Athan/TvQuran.com__02.athan.mp3"},
+	{"Ibrahim Al-Arkani", tvquran + "TvQuran.com__Athan/TvQuran.com__03.athan.mp3"},
+	{"Islam Sobhi", tvquran + "selections/315/5cc9f578195e0.mp3"},
+}
+
+// fajrs carry Fajr's "as-salatu khayrun min an-nawm", so they are offered for Fajr alone.
+var fajrs = []voice{
+	{"Mansoor Az-Zahrani (Fajr)", tvquran + "TvQuran.com__Athan/TvQuran.com__01.athan.mp3"},
+	{"Mishary Alafasi (Fajr), with dua", tvquran + "selections/180/58b0dac02106f.mp3"},
+	{"Malek Chibat Al-Hamd (Fajr)", tvquran + "TvQuran.com__Athan/TvQuran.com__07.athan-fjer.mp3"},
+	{"Ahmed Abdulrahman Darar (Fajr)", tvquran + "selections/380/6088017b417a3.mp3"},
+}
+
+// VoiceNames are the choices for the other prayers, or for Fajr: its own athans first, then the rest.
 func VoiceNames(fajr bool) []string {
 	var out []string
 	if fajr {
+		for _, v := range fajrs {
+			out = append(out, v.Name)
+		}
 		out = append(out, SameVoice)
 	}
-	for _, v := range voices {
+	for _, v := range athans {
 		out = append(out, v.Name)
 	}
 	return append(out, CustomVoice)
+}
+
+// Recordings are every built-in recording, the chosen ones first, so the device can keep them all.
+func (s Settings) Recordings() []string {
+	out := []string{s.URL(Fajr), s.URL(Dhuhr)}
+	for _, v := range slices.Concat(fajrs, athans) {
+		out = append(out, v.URL)
+	}
+	return unique(out...)
 }
