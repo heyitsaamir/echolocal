@@ -8,6 +8,7 @@ require (
 	charm.land/lipgloss/v2 v2.0.5
 	github.com/charmbracelet/colorprofile v0.4.3
 	github.com/go-gui-org/go-gui v0.94.0
+	github.com/hajimehoshi/go-mp3 v0.3.4
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/viper v1.21.0
 	github.com/ygelfand/go-esphome-device v0.0.20
@@ -62,7 +63,6 @@ require (
 	github.com/gopacket/gopacket v1.7.7 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/gtank/ristretto255 v0.1.2 // indirect
-	github.com/hajimehoshi/go-mp3 v0.3.4 // indirect
 	github.com/huatuo-ai/go-pcap v0.0.0-20261024150547-bf02efa66c5d // indirect
 	github.com/icza/bitio v1.1.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect

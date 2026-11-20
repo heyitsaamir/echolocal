@@ -8,6 +8,7 @@ import (
 	_ "github.com/ygelfand/echolocal/internal/feature/alarm"
 	_ "github.com/ygelfand/echolocal/internal/feature/api"
 	_ "github.com/ygelfand/echolocal/internal/feature/arbitration"
+	_ "github.com/ygelfand/echolocal/internal/feature/athan"
 	_ "github.com/ygelfand/echolocal/internal/feature/bluetooth"
 	_ "github.com/ygelfand/echolocal/internal/feature/buttons"
 	_ "github.com/ygelfand/echolocal/internal/feature/control"
